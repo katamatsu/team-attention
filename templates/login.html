@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}ログイン | COURT LOG{% endblock %}
+{% block content %}
+<main class="login-shell">
+  <section class="login-visual"><div class="brand-mark">CL<span>／</span>01</div><div><p class="eyebrow">BASKETBALL TEAM ATTENDANCE</p><h1>練習を、<br><em>チームの力</em>に。</h1><p class="visual-note">毎日の出席を記録して、チームの今を正確に把握する。</p></div><p class="season">2026 / SEASON</p></section>
+  <section class="login-panel"><div class="login-box"><p class="eyebrow orange">WELCOME BACK</p><h2>ログイン</h2><p class="subcopy">チームの出席状況を確認しましょう。</p>{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack">{% for category, message in messages %}<p class="flash {{ category }}">{{ message }}</p>{% endfor %}</div>{% endif %}{% endwith %}<form method="post"><label>ユーザー名<input name="username" type="text" autocomplete="username" placeholder="username" required></label><label>パスワード<input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required></label><button class="primary-button" type="submit">ログイン <span>→</span></button></form><div class="demo-account"><strong>DEMO ACCOUNT</strong><span>captain / captain123</span></div></div><p class="copyright">COURT LOG <span>·</span> TEAM MANAGEMENT</p></section>
+</main>
+{% endblock %}

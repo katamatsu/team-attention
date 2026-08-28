@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}練習予定を追加 | COURT LOG{% endblock %}
+{% block content %}
+<main class="edit-shell"><div class="edit-box"><p class="eyebrow orange">PRACTICE SCHEDULE</p><h1>練習予定を追加</h1><p class="subcopy">臨時練習や変更後の予定を登録します。</p>{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<p class="flash {{ category }}">{{ message }}</p>{% endfor %}{% endif %}{% endwith %}<form method="post"><label>日付<input name="practice_date" type="date" required autofocus></label><label>開始時間<input name="start_time" type="time" required></label><label>終了時間<input name="end_time" type="time" required></label><label>場所<input name="location" type="text" value="第一体育館" required></label><div class="edit-actions"><a href="{{ url_for('dashboard') }}">キャンセル</a><button class="primary-button" type="submit">予定を追加 <span>→</span></button></div></form></div></main>
+{% endblock %}

@@ -1,6 +1,7 @@
 import os
 import sqlite3
-from datetime import date, timedelta
+import calendar
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, flash, g, redirect, render_template, request, url_for
@@ -41,7 +42,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             practice_date TEXT NOT NULL,
             start_time TEXT NOT NULL,
-            location TEXT NOT NULL
+            location TEXT NOT NULL,
+            is_cancelled INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,6 +56,9 @@ def init_db():
         );
         """
     )
+    columns = {row[1] for row in db.execute("PRAGMA table_info(practices)").fetchall()}
+    if "is_cancelled" not in columns:
+        db.execute("ALTER TABLE practices ADD COLUMN is_cancelled INTEGER NOT NULL DEFAULT 0")
     if db.execute("SELECT COUNT(*) FROM members").fetchone()[0] == 0:
         db.executemany(
             "INSERT INTO members (name, number, position) VALUES (?, ?, ?)",
@@ -65,6 +70,32 @@ def init_db():
             "INSERT INTO practices (practice_date, start_time, location) VALUES (?, ?, ?)",
             [((today - timedelta(days=offset)).isoformat(), time, "第一体育館") for offset, time in [(0, "18:30"), (1, "18:30"), (3, "19:00"), (5, "18:30"), (7, "19:00")]],
         )
+    db.commit()
+
+
+def practice_rule(day):
+    if day.weekday() == 1:
+        return "17:00", "19:00"
+    if day.weekday() == 3:
+        return "18:00", "20:00"
+    if day.weekday() == 5 and ((day.day - 1) // 7 + 1) in (2, 4, 5):
+        return "17:00", "20:00"
+    if day.weekday() == 6:
+        return "10:00", "13:00"
+    return None
+
+
+def ensure_month_practices(year, month):
+    db = get_db()
+    last_day = calendar.monthrange(year, month)[1]
+    for day_number in range(1, last_day + 1):
+        practice_day = date(year, month, day_number)
+        rule = practice_rule(practice_day)
+        if rule is None:
+            continue
+        exists = db.execute("SELECT id FROM practices WHERE practice_date = ?", (practice_day.isoformat(),)).fetchone()
+        if exists is None:
+            db.execute("INSERT INTO practices (practice_date, start_time, location) VALUES (?, ?, ?)", (practice_day.isoformat(), rule[0], "第一体育館"))
     db.commit()
 
 
@@ -80,14 +111,24 @@ def dashboard():
         member_id = request.form.get("member_id", type=int)
         practice_id = request.form.get("practice_id", type=int)
         if member_id and practice_id:
+            practice_status = db.execute("SELECT is_cancelled FROM practices WHERE id = ?", (practice_id,)).fetchone()
+            if practice_status and practice_status["is_cancelled"]:
+                flash("休止中の練習には出席を登録できません。", "error")
+                return redirect(url_for("dashboard", selected=request.form.get("selected", ""), month=request.form.get("month", "")))
             db.execute("INSERT OR REPLACE INTO attendance (member_id, practice_id, status) VALUES (?, ?, 'present')", (member_id, practice_id))
             db.commit()
             flash("出席を登録しました。", "success")
-        return redirect(url_for("dashboard", selected=request.form.get("selected", "")))
+        return redirect(url_for("dashboard", selected=request.form.get("selected", ""), month=request.form.get("month", "")))
 
-    practices = db.execute("SELECT * FROM practices ORDER BY practice_date DESC").fetchall()
-    selected = request.args.get("selected") or (practices[0]["practice_date"] if practices else "")
-    practice = next((item for item in practices if item["practice_date"] == selected), practices[0] if practices else None)
+    today = date.today()
+    try:
+        month_date = datetime.strptime(request.args.get("month", today.strftime("%Y-%m")), "%Y-%m").date().replace(day=1)
+    except ValueError:
+        month_date = today.replace(day=1)
+    ensure_month_practices(month_date.year, month_date.month)
+    practices = db.execute("SELECT * FROM practices WHERE practice_date LIKE ? ORDER BY practice_date", (f"{month_date:%Y-%m}%",)).fetchall()
+    selected = request.args.get("selected") or (today.isoformat() if any(item["practice_date"] == today.isoformat() for item in practices) else (practices[0]["practice_date"] if practices else ""))
+    practice = next((item for item in practices if item["practice_date"] == selected), None)
     members = db.execute(
         """
         SELECT m.*, a.status FROM members m
@@ -96,8 +137,47 @@ def dashboard():
         """,
         (practice["id"],) if practice else (0,),
     ).fetchall()
-    present_count = sum(member["status"] == "present" for member in members)
-    return render_template("dashboard.html", practices=practices, practice=practice, members=members, present_count=present_count)
+    present_count = sum(member["status"] == "present" for member in members) if practice else 0
+    previous_month = (month_date - timedelta(days=1)).replace(day=1)
+    next_month = (month_date + timedelta(days=32)).replace(day=1)
+    calendar_days = calendar.Calendar(firstweekday=6).monthdatescalendar(month_date.year, month_date.month)
+    practice_by_date = {item["practice_date"]: item for item in practices}
+    return render_template("dashboard.html", practices=practices, practice=practice, selected=selected, members=members, present_count=present_count, calendar_days=calendar_days, practice_by_date=practice_by_date, month_date=month_date, previous_month=previous_month, next_month=next_month)
+
+
+@app.route("/practices/<int:practice_id>/toggle", methods=("POST",))
+def toggle_practice(practice_id):
+    db = get_db()
+    db.execute("UPDATE practices SET is_cancelled = CASE is_cancelled WHEN 1 THEN 0 ELSE 1 END WHERE id = ?", (practice_id,))
+    db.commit()
+    flash("練習予定を更新しました。", "success")
+    return redirect(url_for("dashboard", selected=request.form.get("selected", ""), month=request.form.get("month", "")))
+
+
+@app.route("/practices/new", methods=("GET", "POST"))
+def add_practice():
+    if request.method == "POST":
+        practice_date = request.form.get("practice_date", "")
+        start_time = request.form.get("start_time", "").strip()
+        end_time = request.form.get("end_time", "").strip()
+        location = request.form.get("location", "第一体育館").strip()
+        try:
+            datetime.strptime(practice_date, "%Y-%m-%d")
+            if not start_time or not end_time or not location:
+                raise ValueError
+        except ValueError:
+            flash("日付、時間、場所を正しく入力してください。", "error")
+        else:
+            db = get_db()
+            existing = db.execute("SELECT id FROM practices WHERE practice_date = ?", (practice_date,)).fetchone()
+            if existing:
+                db.execute("UPDATE practices SET start_time = ?, location = ?, is_cancelled = 0 WHERE id = ?", (f"{start_time} - {end_time}", location, existing["id"]))
+            else:
+                db.execute("INSERT INTO practices (practice_date, start_time, location) VALUES (?, ?, ?)", (practice_date, f"{start_time} - {end_time}", location))
+            db.commit()
+            flash("練習予定を追加しました。", "success")
+            return redirect(url_for("dashboard", selected=practice_date, month=practice_date[:7]))
+    return render_template("add_practice.html")
 
 
 @app.route("/members/<int:member_id>/edit", methods=("GET", "POST"))

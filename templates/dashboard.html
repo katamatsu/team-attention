@@ -1,50 +1,10 @@
 {% extends "base.html" %}
 {% block title %}出席管理 | COURT LOG{% endblock %}
 {% block content %}
-<div class="app-shell">
-  <aside class="sidebar">
-    <div class="side-brand">CL<span>／</span><small>01</small></div>
-    <nav>
-      <a class="active" href="{{ url_for('dashboard') }}"><span>▣</span>出席管理</a>
-      <a href="{{ url_for('dashboard') }}"><span>◷</span>練習スケジュール</a>
-      <a href="{{ url_for('dashboard') }}"><span>♙</span>メンバー</a>
-    </nav>
-    <div class="side-bottom"><div class="avatar">CL</div><div><strong>TEAM</strong><small>MEMBERS</small></div></div>
-  </aside>
-  <main class="main-content">
-    <header class="topbar">
-      <div><p class="eyebrow orange">TEAM OVERVIEW / 2026</p><h1>出席管理</h1></div>
-      <div class="user-chip"><span class="status-dot"></span> 練習日を選択して記録</div>
-    </header>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}<div class="flash-stack dashboard-flash">{% for category, message in messages %}<p class="flash {{ category }}">{{ message }}</p>{% endfor %}</div>{% endif %}
-    {% endwith %}
-    <section class="summary">
-      <div class="summary-label">SELECTED PRACTICE <span>●</span></div>
-      <div class="date-title">{% if practice %}{{ practice['practice_date'][5:7] }}<small> / {{ practice['practice_date'][0:4] }}</small>{% else %}--{% endif %}</div>
-      <div class="practice-meta">{% if practice %}<strong>{{ practice['practice_date'][5:7] }}月{{ practice['practice_date'][8:10] }}日</strong><span>{{ practice['start_time'] }} START</span><span>{{ practice['location'] }}</span>{% endif %}</div>
-      <div class="attendance-rate"><strong>{{ present_count }}<small> / {{ members|length }}</small></strong><span>ATTENDED<br><b>出席人数</b></span></div>
-    </section>
-    <section class="workspace">
-      <div class="practice-list">
-        <div class="section-heading"><h2>練習日</h2><span>{{ practices|length }} SESSIONS</span></div>
-        {% for item in practices %}<a class="practice-item {% if practice and item['id'] == practice['id'] %}selected{% endif %}" href="{{ url_for('dashboard', selected=item['practice_date']) }}"><span class="calendar-icon">{{ item['practice_date'][8:10] }}</span><span><strong>{{ item['practice_date'][5:7] }}月{{ item['practice_date'][8:10] }}日</strong><small>{{ item['start_time'] }} · {{ item['location'] }}</small></span><b>›</b></a>{% endfor %}
-      </div>
-      <div class="attendance-panel">
-        <div class="section-heading"><div><h2>出席メンバー</h2><p>練習に参加したメンバーを登録</p></div><a class="add-member-link" href="{{ url_for('add_member') }}">＋ メンバーを追加</a><span class="live-label"><i></i> LIVE</span></div>
-        <div class="member-table">
-          <div class="table-head"><span>PLAYER</span><span>POSITION</span><span>STATUS</span><span>ACTION</span></div>
-          {% for member in members %}
-          <div class="member-row">
-            <div class="player"><span class="number">{{ member['number'] }}</span><strong>{{ member['name'] }}</strong><a class="edit-name" href="{{ url_for('edit_member', member_id=member['id']) }}">編集</a></div>
-            <span class="position">{{ member['position'] }}</span>
-            <span>{% if member['status'] == 'present' %}<b class="present">出席</b>{% else %}<b class="absent">未登録</b>{% endif %}</span>
-            <form method="post"><input type="hidden" name="member_id" value="{{ member['id'] }}"><input type="hidden" name="practice_id" value="{{ practice['id'] }}"><input type="hidden" name="selected" value="{{ practice['practice_date'] }}"><button class="attendance-button {% if member['status'] == 'present' %}done{% endif %}" type="submit">{% if member['status'] == 'present' %}✓ 登録済み{% else %}+ 出席を登録{% endif %}</button></form>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-    </section>
-  </main>
-</div>
+<div class="app-shell"><aside class="sidebar"><div class="side-brand">CL<span>／</span><small>01</small></div><nav><a class="active" href="{{ url_for('dashboard') }}"><span>▣</span>出席管理</a><a href="{{ url_for('dashboard') }}"><span>◷</span>練習スケジュール</a><a href="{{ url_for('dashboard') }}"><span>♙</span>メンバー</a></nav><div class="side-bottom"><div class="avatar">CL</div><div><strong>TEAM</strong><small>MEMBERS</small></div></div></aside>
+<main class="main-content"><header class="topbar"><div><p class="eyebrow orange">TEAM OVERVIEW / 2026</p><h1>出席管理</h1></div><div class="user-chip"><span class="status-dot"></span> 日付を選択して出席を記録</div></header>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack dashboard-flash">{% for category, message in messages %}<p class="flash {{ category }}">{{ message }}</p>{% endfor %}</div>{% endif %}{% endwith %}
+<section class="calendar-section"><div class="calendar-toolbar"><div><p class="eyebrow orange">PRACTICE CALENDAR</p><h2>{{ month_date.year }}年{{ month_date.month }}月</h2></div><div class="calendar-actions"><a href="{{ url_for('dashboard', month=previous_month.strftime('%Y-%m')) }}">‹</a><a class="today-link" href="{{ url_for('dashboard') }}">今日</a><a href="{{ url_for('dashboard', month=next_month.strftime('%Y-%m')) }}">›</a><a class="add-schedule" href="{{ url_for('add_practice') }}">＋ 予定を追加</a></div></div><div class="week-head"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div><div class="calendar-grid">{% for week in calendar_days %}{% for day in week %}{% set item = practice_by_date.get(day.isoformat()) %}<a class="calendar-day {% if day.month != month_date.month %}other-month{% endif %} {% if item and item['practice_date'] == selected %}selected{% endif %} {% if item and item['is_cancelled'] %}cancelled{% endif %}" href="{{ url_for('dashboard', selected=day.isoformat(), month=month_date.strftime('%Y-%m')) }}"><strong>{{ day.day }}</strong>{% if item %}<span class="calendar-event">{% if item['is_cancelled'] %}休止{% else %}練習{% endif %}</span><small>{{ item['start_time'] }}</small>{% endif %}</a>{% endfor %}{% endfor %}</div><p class="calendar-note">火 17:00-19:00　木 18:00-20:00　土（第2・4・5週）17:00-20:00　日 10:00-13:00</p></section>
+<section class="selected-practice"><div class="selected-heading"><div><p class="eyebrow orange">SELECTED DATE</p><h2>{% if practice %}{{ practice['practice_date'][0:4] }}年{{ practice['practice_date'][5:7] }}月{{ practice['practice_date'][8:10] }}日{% else %}練習のない日{% endif %}</h2></div>{% if practice %}<form method="post" action="{{ url_for('toggle_practice', practice_id=practice['id']) }}"><input type="hidden" name="selected" value="{{ practice['practice_date'] }}"><input type="hidden" name="month" value="{{ month_date.strftime('%Y-%m') }}"><button class="schedule-toggle {% if practice['is_cancelled'] %}restore{% endif %}" type="submit">{% if practice['is_cancelled'] %}練習を再開{% else %}この日の練習を休止{% endif %}</button></form>{% endif %}</div>{% if practice and not practice['is_cancelled'] %}<div class="selected-meta"><strong>{{ practice['start_time'] }}</strong><span>{{ practice['location'] }}</span><b>{{ present_count }} / {{ members|length }}人 出席</b></div><div class="member-table"><div class="table-head"><span>PLAYER</span><span>POSITION</span><span>STATUS</span><span>ACTION</span></div>{% for member in members %}<div class="member-row"><div class="player"><span class="number">{{ member['number'] }}</span><strong>{{ member['name'] }}</strong><a class="edit-name" href="{{ url_for('edit_member', member_id=member['id']) }}">編集</a></div><span class="position">{{ member['position'] }}</span><span>{% if member['status'] == 'present' %}<b class="present">出席</b>{% else %}<b class="absent">未登録</b>{% endif %}</span><form method="post"><input type="hidden" name="member_id" value="{{ member['id'] }}"><input type="hidden" name="practice_id" value="{{ practice['id'] }}"><input type="hidden" name="selected" value="{{ practice['practice_date'] }}"><input type="hidden" name="month" value="{{ month_date.strftime('%Y-%m') }}"><button class="attendance-button {% if member['status'] == 'present' %}done{% endif %}" type="submit">{% if member['status'] == 'present' %}✓ 登録済み{% else %}+ 出席を登録{% endif %}</button></form></div>{% endfor %}</div>{% elif practice and practice['is_cancelled'] %}<div class="cancelled-message">この日の練習は休止設定です。必要になったら「練習を再開」を押してください。</div>{% else %}<div class="cancelled-message">この日は定期練習がありません。臨時練習は「予定を追加」から登録できます。</div>{% endif %}</section>
+<section class="member-shortcut"><a href="{{ url_for('add_member') }}">＋ メンバーを追加</a><span>メンバーの名前・背番号は各行の「編集」から変更できます。</span></section></main></div>
 {% endblock %}

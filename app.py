@@ -100,6 +100,24 @@ def dashboard():
     return render_template("dashboard.html", practices=practices, practice=practice, members=members, present_count=present_count)
 
 
+@app.route("/members/<int:member_id>/edit", methods=("GET", "POST"))
+def edit_member(member_id):
+    db = get_db()
+    member = db.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
+    if member is None:
+        return "メンバーが見つかりません", 404
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("名前を入力してください。", "error")
+        else:
+            db.execute("UPDATE members SET name = ? WHERE id = ?", (name, member_id))
+            db.commit()
+            flash("名前を更新しました。", "success")
+            return redirect(url_for("dashboard"))
+    return render_template("edit_member.html", member=member)
+
+
 if __name__ == "__main__":
     with app.app_context():
         init_db()

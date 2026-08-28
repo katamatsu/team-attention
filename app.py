@@ -108,10 +108,11 @@ def edit_member(member_id):
         return "メンバーが見つかりません", 404
     if request.method == "POST":
         name = request.form.get("name", "").strip()
-        if not name:
-            flash("名前を入力してください。", "error")
+        number = request.form.get("number", "").strip()
+        if not name or not number:
+            flash("名前と背番号を入力してください。", "error")
         else:
-            db.execute("UPDATE members SET name = ? WHERE id = ?", (name, member_id))
+            db.execute("UPDATE members SET name = ?, number = ? WHERE id = ?", (name, number, member_id))
             db.commit()
             flash("名前を更新しました。", "success")
             return redirect(url_for("dashboard"))

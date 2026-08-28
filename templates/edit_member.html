@@ -13,6 +13,7 @@
     {% endwith %}
     <form method="post">
       <label>名前<input name="name" type="text" value="{{ member['name'] }}" required autofocus></label>
+      <label>背番号<input name="number" type="text" value="{{ member['number'] }}" required placeholder="#4"></label>
       <div class="edit-actions"><a href="{{ url_for('dashboard') }}">キャンセル</a><button class="primary-button" type="submit">保存 <span>→</span></button></div>
     </form>
   </div>

@@ -119,6 +119,23 @@ def edit_member(member_id):
     return render_template("edit_member.html", member=member)
 
 
+@app.route("/members/new", methods=("GET", "POST"))
+def add_member():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        number = request.form.get("number", "").strip()
+        position = request.form.get("position", "").strip().upper()
+        if not name or not number or not position:
+            flash("名前、背番号、ポジションを入力してください。", "error")
+        else:
+            db = get_db()
+            db.execute("INSERT INTO members (name, number, position) VALUES (?, ?, ?)", (name, number, position))
+            db.commit()
+            flash("メンバーを追加しました。", "success")
+            return redirect(url_for("dashboard"))
+    return render_template("add_member.html")
+
+
 if __name__ == "__main__":
     with app.app_context():
         init_db()

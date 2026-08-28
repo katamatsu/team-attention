@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}メンバーを追加 | COURT LOG{% endblock %}
+{% block content %}
+<main class="edit-shell">
+  <div class="edit-box">
+    <p class="eyebrow orange">TEAM MEMBER</p>
+    <h1>メンバーを追加</h1>
+    <p class="subcopy">新しいメンバーの情報を入力します。</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}<p class="flash {{ category }}">{{ message }}</p>{% endfor %}
+      {% endif %}
+    {% endwith %}
+    <form method="post">
+      <label>名前<input name="name" type="text" required autofocus placeholder="例：田中 次郎"></label>
+      <label>背番号<input name="number" type="text" required placeholder="#18"></label>
+      <label>ポジション<input name="position" type="text" required placeholder="G / F / C"></label>
+      <div class="edit-actions"><a href="{{ url_for('dashboard') }}">キャンセル</a><button class="primary-button" type="submit">追加する <span>→</span></button></div>
+    </form>
+  </div>
+</main>
+{% endblock %}

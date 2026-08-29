@@ -76,6 +76,31 @@ def init_db():
             FOREIGN KEY(game_id) REFERENCES games(id),
             FOREIGN KEY(member_id) REFERENCES members(id)
         );
+        CREATE TABLE IF NOT EXISTS opponent_players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            number TEXT NOT NULL,
+            UNIQUE(game_id, number),
+            FOREIGN KEY(game_id) REFERENCES games(id)
+        );
+        CREATE TABLE IF NOT EXISTS opponent_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            opponent_player_id INTEGER NOT NULL,
+            two_pm INTEGER NOT NULL DEFAULT 0,
+            two_pa INTEGER NOT NULL DEFAULT 0,
+            three_pm INTEGER NOT NULL DEFAULT 0,
+            three_pa INTEGER NOT NULL DEFAULT 0,
+            free_throw_m INTEGER NOT NULL DEFAULT 0,
+            free_throw_a INTEGER NOT NULL DEFAULT 0,
+            rebounds INTEGER NOT NULL DEFAULT 0,
+            turnovers INTEGER NOT NULL DEFAULT 0,
+            assists INTEGER NOT NULL DEFAULT 0,
+            fouls INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(game_id, opponent_player_id),
+            FOREIGN KEY(game_id) REFERENCES games(id),
+            FOREIGN KEY(opponent_player_id) REFERENCES opponent_players(id)
+        );
         """
     )
     columns = {row[1] for row in db.execute("PRAGMA table_info(practices)").fetchall()}
@@ -251,19 +276,19 @@ def stats():
     db = get_db()
     if request.method == "POST":
         game_id = request.form.get("game_id", type=int)
-        members = db.execute("SELECT id FROM members ORDER BY CAST(REPLACE(number, '#', '') AS INTEGER)").fetchall()
+        side = request.form.get("side", "team")
+        player_rows = db.execute("SELECT id FROM opponent_players WHERE game_id = ?" if side == "opponent" else "SELECT id FROM members", (game_id,) if side == "opponent" else ()).fetchall()
         metrics = ("two_pm", "two_pa", "three_pm", "three_pa", "free_throw_m", "free_throw_a", "rebounds", "turnovers", "assists", "fouls")
-        for member in members:
-            values = [max(0, request.form.get(f"{metric}_{member['id']}", 0, type=int) or 0) for metric in metrics]
-            db.execute(
-                """INSERT INTO game_stats (game_id, member_id, two_pm, two_pa, three_pm, three_pa, free_throw_m, free_throw_a, rebounds, turnovers, assists, fouls)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(game_id, member_id) DO UPDATE SET two_pm=excluded.two_pm, two_pa=excluded.two_pa,
-                   three_pm=excluded.three_pm, three_pa=excluded.three_pa, free_throw_m=excluded.free_throw_m,
-                   free_throw_a=excluded.free_throw_a, rebounds=excluded.rebounds, turnovers=excluded.turnovers,
-                   assists=excluded.assists, fouls=excluded.fouls""",
-                (game_id, member["id"], *values),
-            )
+        table = "opponent_stats" if side == "opponent" else "game_stats"
+        key = "opponent_player_id" if side == "opponent" else "member_id"
+        for player in player_rows:
+            values = [max(0, request.form.get(f"{metric}_{player['id']}", 0, type=int) or 0) for metric in metrics]
+            db.execute(f"""INSERT INTO {table} (game_id, {key}, two_pm, two_pa, three_pm, three_pa, free_throw_m, free_throw_a, rebounds, turnovers, assists, fouls)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(game_id, {key}) DO UPDATE SET two_pm=excluded.two_pm, two_pa=excluded.two_pa,
+                three_pm=excluded.three_pm, three_pa=excluded.three_pa, free_throw_m=excluded.free_throw_m,
+                free_throw_a=excluded.free_throw_a, rebounds=excluded.rebounds, turnovers=excluded.turnovers,
+                assists=excluded.assists, fouls=excluded.fouls""", (game_id, player["id"], *values))
         db.commit()
         flash("スタッツを保存しました。", "success")
         return redirect(url_for("stats", game=game_id))
@@ -271,6 +296,7 @@ def stats():
     games = db.execute("SELECT * FROM games ORDER BY game_date DESC, id DESC").fetchall()
     game = next((item for item in games if str(item["id"]) == request.args.get("game")), games[0] if games else None)
     members = []
+    opponents = []
     totals = {metric: 0 for metric in ("points", "two_pm", "two_pa", "three_pm", "three_pa", "free_throw_m", "free_throw_a", "rebounds", "turnovers", "assists", "fouls")}
     if game:
         members = db.execute(
@@ -288,7 +314,32 @@ def stats():
         for member in members:
             for metric in totals:
                 totals[metric] += member[metric]
-    return render_template("stats.html", games=games, game=game, members=members, totals=totals)
+        opponents = db.execute("""SELECT p.*, COALESCE(s.two_pm, 0) two_pm, COALESCE(s.two_pa, 0) two_pa,
+            COALESCE(s.three_pm, 0) three_pm, COALESCE(s.three_pa, 0) three_pa,
+            COALESCE(s.free_throw_m, 0) free_throw_m, COALESCE(s.free_throw_a, 0) free_throw_a,
+            COALESCE(s.rebounds, 0) rebounds, COALESCE(s.turnovers, 0) turnovers,
+            COALESCE(s.assists, 0) assists, COALESCE(s.fouls, 0) fouls,
+            (COALESCE(s.two_pm, 0) * 2 + COALESCE(s.three_pm, 0) * 3 + COALESCE(s.free_throw_m, 0)) points
+            FROM opponent_players p LEFT JOIN opponent_stats s ON s.opponent_player_id = p.id AND s.game_id = ?
+            WHERE p.game_id = ? ORDER BY CAST(REPLACE(p.number, '#', '') AS INTEGER)""", (game["id"], game["id"])).fetchall()
+    opponent_totals = {metric: 0 for metric in totals}
+    for player in opponents:
+        for metric in opponent_totals:
+            opponent_totals[metric] += player[metric]
+    return render_template("stats.html", games=games, game=game, members=members, opponents=opponents, totals=totals, opponent_totals=opponent_totals, side=request.args.get("side", "team"))
+
+
+@app.route("/stats/<int:game_id>/opponents/new", methods=("POST",))
+def add_opponent(game_id):
+    number = request.form.get("number", "").strip()
+    if not number:
+        flash("相手選手の番号を入力してください。", "error")
+    else:
+        db = get_db()
+        db.execute("INSERT OR IGNORE INTO opponent_players (game_id, number) VALUES (?, ?)", (game_id, number))
+        db.commit()
+        flash("相手選手を追加しました。", "success")
+    return redirect(url_for("stats", game=game_id, side="opponent"))
 
 
 @app.route("/stats/games/new", methods=("GET", "POST"))

@@ -95,7 +95,11 @@ def ensure_month_practices(year, month):
             continue
         exists = db.execute("SELECT id FROM practices WHERE practice_date = ?", (practice_day.isoformat(),)).fetchone()
         if exists is None:
-            db.execute("INSERT INTO practices (practice_date, start_time, location) VALUES (?, ?, ?)", (practice_day.isoformat(), rule[0], "第一体育館"))
+            db.execute("INSERT INTO practices (practice_date, start_time, location) VALUES (?, ?, ?)", (practice_day.isoformat(), f"{rule[0]} - {rule[1]}", "第一体育館"))
+        else:
+            current = db.execute("SELECT start_time FROM practices WHERE id = ?", (exists["id"],)).fetchone()
+            if " - " not in current["start_time"]:
+                db.execute("UPDATE practices SET start_time = ? WHERE id = ?", (f"{rule[0]} - {rule[1]}", exists["id"]))
     db.commit()
 
 

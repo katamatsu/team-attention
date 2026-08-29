@@ -1,0 +1,1 @@
+.stats-head,.stats-row{grid-template-columns:minmax(150px,2fr) 48px repeat(3,52px) repeat(3,52px) repeat(3,52px) repeat(4,52px);min-width:980px}.calculated-points,.percentage{font-family:'Space Grotesk';text-align:center;color:#ed6b3d}.percentage{font-size:11px;color:#5d7c49}

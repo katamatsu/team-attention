@@ -81,6 +81,10 @@ def init_db():
     columns = {row[1] for row in db.execute("PRAGMA table_info(practices)").fetchall()}
     if "is_cancelled" not in columns:
         db.execute("ALTER TABLE practices ADD COLUMN is_cancelled INTEGER NOT NULL DEFAULT 0")
+    stat_columns = {row[1] for row in db.execute("PRAGMA table_info(game_stats)").fetchall()}
+    for column in ("two_pm", "two_pa", "three_pm", "three_pa", "free_throw_m", "free_throw_a"):
+        if column not in stat_columns:
+            db.execute(f"ALTER TABLE game_stats ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
     if db.execute("SELECT COUNT(*) FROM members").fetchone()[0] == 0:
         db.executemany(
             "INSERT INTO members (name, number, position) VALUES (?, ?, ?)",
@@ -248,14 +252,16 @@ def stats():
     if request.method == "POST":
         game_id = request.form.get("game_id", type=int)
         members = db.execute("SELECT id FROM members ORDER BY CAST(REPLACE(number, '#', '') AS INTEGER)").fetchall()
-        metrics = ("points", "rebounds", "assists", "steals", "blocks", "fouls", "turnovers")
+        metrics = ("two_pm", "two_pa", "three_pm", "three_pa", "free_throw_m", "free_throw_a", "rebounds", "turnovers", "assists", "fouls")
         for member in members:
             values = [max(0, request.form.get(f"{metric}_{member['id']}", 0, type=int) or 0) for metric in metrics]
             db.execute(
-                """INSERT INTO game_stats (game_id, member_id, points, rebounds, assists, steals, blocks, fouls, turnovers)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(game_id, member_id) DO UPDATE SET points=excluded.points, rebounds=excluded.rebounds,
-                   assists=excluded.assists, steals=excluded.steals, blocks=excluded.blocks, fouls=excluded.fouls, turnovers=excluded.turnovers""",
+                """INSERT INTO game_stats (game_id, member_id, two_pm, two_pa, three_pm, three_pa, free_throw_m, free_throw_a, rebounds, turnovers, assists, fouls)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(game_id, member_id) DO UPDATE SET two_pm=excluded.two_pm, two_pa=excluded.two_pa,
+                   three_pm=excluded.three_pm, three_pa=excluded.three_pa, free_throw_m=excluded.free_throw_m,
+                   free_throw_a=excluded.free_throw_a, rebounds=excluded.rebounds, turnovers=excluded.turnovers,
+                   assists=excluded.assists, fouls=excluded.fouls""",
                 (game_id, member["id"], *values),
             )
         db.commit()
@@ -265,12 +271,16 @@ def stats():
     games = db.execute("SELECT * FROM games ORDER BY game_date DESC, id DESC").fetchall()
     game = next((item for item in games if str(item["id"]) == request.args.get("game")), games[0] if games else None)
     members = []
-    totals = {metric: 0 for metric in ("points", "rebounds", "assists", "steals", "blocks", "fouls", "turnovers")}
+    totals = {metric: 0 for metric in ("points", "two_pm", "two_pa", "three_pm", "three_pa", "free_throw_m", "free_throw_a", "rebounds", "turnovers", "assists", "fouls")}
     if game:
         members = db.execute(
-            """SELECT m.*, COALESCE(s.points, 0) points, COALESCE(s.rebounds, 0) rebounds,
-            COALESCE(s.assists, 0) assists, COALESCE(s.steals, 0) steals, COALESCE(s.blocks, 0) blocks,
-            COALESCE(s.fouls, 0) fouls, COALESCE(s.turnovers, 0) turnovers FROM members m
+            """SELECT m.*, COALESCE(s.two_pm, 0) two_pm, COALESCE(s.two_pa, 0) two_pa,
+            COALESCE(s.three_pm, 0) three_pm, COALESCE(s.three_pa, 0) three_pa,
+            COALESCE(s.free_throw_m, 0) free_throw_m, COALESCE(s.free_throw_a, 0) free_throw_a,
+            COALESCE(s.rebounds, 0) rebounds, COALESCE(s.turnovers, 0) turnovers,
+            COALESCE(s.assists, 0) assists, COALESCE(s.fouls, 0) fouls,
+            (COALESCE(s.two_pm, 0) * 2 + COALESCE(s.three_pm, 0) * 3 + COALESCE(s.free_throw_m, 0)) points
+            FROM members m
             LEFT JOIN game_stats s ON s.member_id = m.id AND s.game_id = ?
             ORDER BY CAST(REPLACE(m.number, '#', '') AS INTEGER)""",
             (game["id"],),

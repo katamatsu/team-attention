@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}試合を追加 | COURT LOG{% endblock %}
+{% block content %}
+<main class="edit-shell"><div class="edit-box"><p class="eyebrow orange">GAME CENTER</p><h1>試合を追加</h1><p class="subcopy">試合情報を登録してスタッツ入力を始めます。</p>{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<p class="flash {{ category }}">{{ message }}</p>{% endfor %}{% endif %}{% endwith %}<form method="post"><label>試合日<input name="game_date" type="date" required autofocus></label><label>対戦相手<input name="opponent" type="text" required placeholder="例：〇〇大学"></label><label>会場<input name="location" type="text" required placeholder="第一体育館"></label><div class="edit-actions"><a href="{{ url_for('stats') }}">キャンセル</a><button class="primary-button" type="submit">試合を追加 <span>→</span></button></div></form></div></main>
+{% endblock %}

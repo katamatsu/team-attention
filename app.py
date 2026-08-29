@@ -54,6 +54,28 @@ def init_db():
             FOREIGN KEY(member_id) REFERENCES members(id),
             FOREIGN KEY(practice_id) REFERENCES practices(id)
         );
+        CREATE TABLE IF NOT EXISTS games (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_date TEXT NOT NULL,
+            opponent TEXT NOT NULL,
+            location TEXT NOT NULL,
+            result TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS game_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            points INTEGER NOT NULL DEFAULT 0,
+            rebounds INTEGER NOT NULL DEFAULT 0,
+            assists INTEGER NOT NULL DEFAULT 0,
+            steals INTEGER NOT NULL DEFAULT 0,
+            blocks INTEGER NOT NULL DEFAULT 0,
+            fouls INTEGER NOT NULL DEFAULT 0,
+            turnovers INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(game_id, member_id),
+            FOREIGN KEY(game_id) REFERENCES games(id),
+            FOREIGN KEY(member_id) REFERENCES members(id)
+        );
         """
     )
     columns = {row[1] for row in db.execute("PRAGMA table_info(practices)").fetchall()}
@@ -218,6 +240,61 @@ def add_member():
             flash("メンバーを追加しました。", "success")
             return redirect(url_for("dashboard"))
     return render_template("add_member.html")
+
+
+@app.route("/stats", methods=("GET", "POST"))
+def stats():
+    db = get_db()
+    if request.method == "POST":
+        game_id = request.form.get("game_id", type=int)
+        members = db.execute("SELECT id FROM members ORDER BY CAST(REPLACE(number, '#', '') AS INTEGER)").fetchall()
+        metrics = ("points", "rebounds", "assists", "steals", "blocks", "fouls", "turnovers")
+        for member in members:
+            values = [max(0, request.form.get(f"{metric}_{member['id']}", 0, type=int) or 0) for metric in metrics]
+            db.execute(
+                """INSERT INTO game_stats (game_id, member_id, points, rebounds, assists, steals, blocks, fouls, turnovers)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(game_id, member_id) DO UPDATE SET points=excluded.points, rebounds=excluded.rebounds,
+                   assists=excluded.assists, steals=excluded.steals, blocks=excluded.blocks, fouls=excluded.fouls, turnovers=excluded.turnovers""",
+                (game_id, member["id"], *values),
+            )
+        db.commit()
+        flash("スタッツを保存しました。", "success")
+        return redirect(url_for("stats", game=game_id))
+
+    games = db.execute("SELECT * FROM games ORDER BY game_date DESC, id DESC").fetchall()
+    game = next((item for item in games if str(item["id"]) == request.args.get("game")), games[0] if games else None)
+    members = []
+    totals = {metric: 0 for metric in ("points", "rebounds", "assists", "steals", "blocks", "fouls", "turnovers")}
+    if game:
+        members = db.execute(
+            """SELECT m.*, COALESCE(s.points, 0) points, COALESCE(s.rebounds, 0) rebounds,
+            COALESCE(s.assists, 0) assists, COALESCE(s.steals, 0) steals, COALESCE(s.blocks, 0) blocks,
+            COALESCE(s.fouls, 0) fouls, COALESCE(s.turnovers, 0) turnovers FROM members m
+            LEFT JOIN game_stats s ON s.member_id = m.id AND s.game_id = ?
+            ORDER BY CAST(REPLACE(m.number, '#', '') AS INTEGER)""",
+            (game["id"],),
+        ).fetchall()
+        for member in members:
+            for metric in totals:
+                totals[metric] += member[metric]
+    return render_template("stats.html", games=games, game=game, members=members, totals=totals)
+
+
+@app.route("/stats/games/new", methods=("GET", "POST"))
+def add_game():
+    if request.method == "POST":
+        game_date = request.form.get("game_date", "")
+        opponent = request.form.get("opponent", "").strip()
+        location = request.form.get("location", "").strip()
+        if not game_date or not opponent or not location:
+            flash("試合日、対戦相手、会場を入力してください。", "error")
+        else:
+            db = get_db()
+            cursor = db.execute("INSERT INTO games (game_date, opponent, location) VALUES (?, ?, ?)", (game_date, opponent, location))
+            db.commit()
+            return redirect(url_for("stats", game=cursor.lastrowid))
+    return render_template("add_game.html")
 
 
 if __name__ == "__main__":

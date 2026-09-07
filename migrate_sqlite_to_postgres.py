@@ -23,10 +23,15 @@ TABLES = (
     "game_stats",
     "opponent_players",
     "opponent_stats",
+    "events",
+    "dashboard_memos",
+    "game_participation",
 )
 
 
 def copy_table(sqlite_connection, postgres_connection, table):
+    if not sqlite_connection.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone():
+        return 0
     sqlite_rows = sqlite_connection.execute(f"SELECT * FROM {table}").fetchall()
     if not sqlite_rows:
         return 0

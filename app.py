@@ -142,6 +142,28 @@ def init_db():
             FOREIGN KEY(game_id) REFERENCES games(id),
             FOREIGN KEY(opponent_player_id) REFERENCES opponent_players(id)
         );
+        CREATE TABLE IF NOT EXISTS events (
+            id {id_definition},
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            title TEXT NOT NULL,
+            location TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS dashboard_memos (
+            id INTEGER PRIMARY KEY,
+            content TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS game_participation (
+            id {id_definition},
+            game_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            UNIQUE(game_id, member_id),
+            FOREIGN KEY(game_id) REFERENCES games(id),
+            FOREIGN KEY(member_id) REFERENCES members(id)
+        );
         """.format(id_definition=id_definition)
     if db.is_postgres:
         for statement in schema.split(";"):
@@ -209,6 +231,12 @@ def load_user_and_database():
 def dashboard():
     db = get_db()
     if request.method == "POST":
+        if request.form.get("action") == "memo":
+            content = request.form.get("content", "").strip()
+            db.execute("INSERT INTO dashboard_memos (id, content) VALUES (1, %s) ON CONFLICT(id) DO UPDATE SET content = EXCLUDED.content", (content,))
+            db.commit()
+            flash("連絡メモを更新しました。", "success")
+            return redirect(url_for("dashboard", selected=request.form.get("selected", ""), month=request.form.get("month", "")))
         member_id = request.form.get("member_id", type=int)
         practice_id = request.form.get("practice_id", type=int)
         if member_id and practice_id:
@@ -231,6 +259,7 @@ def dashboard():
         month_date = today.replace(day=1)
     ensure_month_practices(month_date.year, month_date.month)
     practices = db.execute("SELECT * FROM practices WHERE practice_date LIKE %s ORDER BY practice_date", (f"{month_date:%Y-%m}%",)).fetchall()
+    events = db.execute("SELECT * FROM events WHERE start_date <= %s AND end_date >= %s ORDER BY start_date, start_time", (f"{month_date:%Y-%m}-31", f"{month_date:%Y-%m}-01")).fetchall()
     selected = request.args.get("selected") or (today.isoformat() if any(item["practice_date"] == today.isoformat() for item in practices) else (practices[0]["practice_date"] if practices else ""))
     practice = next((item for item in practices if item["practice_date"] == selected), None)
     members = db.execute(
@@ -246,7 +275,18 @@ def dashboard():
     next_month = (month_date + timedelta(days=32)).replace(day=1)
     calendar_days = calendar.Calendar(firstweekday=6).monthdatescalendar(month_date.year, month_date.month)
     practice_by_date = {item["practice_date"]: item for item in practices}
-    return render_template("dashboard.html", practices=practices, practice=practice, selected=selected, members=members, present_count=present_count, calendar_days=calendar_days, practice_by_date=practice_by_date, month_date=month_date, previous_month=previous_month, next_month=next_month)
+    events_by_date = {}
+    for event in events:
+        event_day = datetime.strptime(event["start_date"], "%Y-%m-%d").date()
+        event_end = datetime.strptime(event["end_date"], "%Y-%m-%d").date()
+        while event_day <= event_end:
+            if event_day.strftime("%Y-%m") == month_date.strftime("%Y-%m"):
+                events_by_date.setdefault(event_day.isoformat(), []).append(event)
+            event_day += timedelta(days=1)
+    memo_row = db.execute("SELECT content FROM dashboard_memos WHERE id = 1").fetchone()
+    memo = memo_row["content"] if memo_row else ""
+    selected_events = events_by_date.get(selected, [])
+    return render_template("dashboard.html", practices=practices, practice=practice, selected=selected, members=members, present_count=present_count, calendar_days=calendar_days, practice_by_date=practice_by_date, events_by_date=events_by_date, selected_events=selected_events, memo=memo, month_date=month_date, previous_month=previous_month, next_month=next_month)
 
 
 @app.route("/practices/<int:practice_id>/toggle", methods=("POST",))
@@ -261,26 +301,40 @@ def toggle_practice(practice_id):
 @app.route("/practices/new", methods=("GET", "POST"))
 def add_practice():
     if request.method == "POST":
-        practice_date = request.form.get("practice_date", "")
+        schedule_type = request.form.get("schedule_type", "practice")
+        start_date = request.form.get("start_date", "")
+        end_date = request.form.get("end_date", "") or start_date
         start_time = request.form.get("start_time", "").strip()
         end_time = request.form.get("end_time", "").strip()
+        title = request.form.get("title", "").strip()
         location = request.form.get("location", "第一体育館").strip()
         try:
-            datetime.strptime(practice_date, "%Y-%m-%d")
-            if not start_time or not end_time or not location:
+            datetime.strptime(start_date, "%Y-%m-%d")
+            datetime.strptime(end_date, "%Y-%m-%d")
+            if end_date < start_date or not start_time or not end_time or not location:
                 raise ValueError
+            if schedule_type == "event" and not title:
+                raise ValueError
+            if schedule_type == "practice" and start_date != end_date:
+                flash("練習は開始日と終了日を同じ日にしてください。", "error")
+                return render_template("add_practice.html")
         except ValueError:
-            flash("日付、時間、場所を正しく入力してください。", "error")
+            flash("日付、時間、内容、場所を正しく入力してください。", "error")
         else:
             db = get_db()
-            existing = db.execute("SELECT id FROM practices WHERE practice_date = %s", (practice_date,)).fetchone()
+            if schedule_type == "event":
+                db.execute("INSERT INTO events (start_date, end_date, start_time, end_time, title, location) VALUES (%s, %s, %s, %s, %s, %s)", (start_date, end_date, start_time, end_time, title, location))
+                db.commit()
+                flash("イベント予定を追加しました。", "success")
+                return redirect(url_for("dashboard", selected=start_date, month=start_date[:7]))
+            existing = db.execute("SELECT id FROM practices WHERE practice_date = %s", (start_date,)).fetchone()
             if existing:
                 db.execute("UPDATE practices SET start_time = %s, location = %s, is_cancelled = 0 WHERE id = %s", (f"{start_time} - {end_time}", location, existing["id"]))
             else:
-                db.execute("INSERT INTO practices (practice_date, start_time, location) VALUES (%s, %s, %s)", (practice_date, f"{start_time} - {end_time}", location))
+                db.execute("INSERT INTO practices (practice_date, start_time, location) VALUES (%s, %s, %s)", (start_date, f"{start_time} - {end_time}", location))
             db.commit()
             flash("練習予定を追加しました。", "success")
-            return redirect(url_for("dashboard", selected=practice_date, month=practice_date[:7]))
+            return redirect(url_for("dashboard", selected=start_date, month=start_date[:7]))
     return render_template("add_practice.html")
 
 
@@ -326,6 +380,17 @@ def stats():
     if request.method == "POST":
         game_id = request.form.get("game_id", type=int)
         side = request.form.get("side", "team")
+        if request.form.get("action") == "participation":
+            member_id = request.form.get("member_id", type=int)
+            status = request.form.get("status", "pending")
+            if member_id and status in ("yes", "no", "pending"):
+                db.execute("""INSERT INTO game_participation (game_id, member_id, status)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT(game_id, member_id)
+                    DO UPDATE SET status = EXCLUDED.status""", (game_id, member_id, status))
+                db.commit()
+                flash("試合参加アンケートを更新しました。", "success")
+            return redirect(url_for("stats", game=game_id, side="participation"))
         player_rows = db.execute("SELECT id FROM opponent_players WHERE game_id = %s" if side == "opponent" else "SELECT id FROM members", (game_id,) if side == "opponent" else ()).fetchall()
         metrics = ("two_pm", "two_pa", "three_pm", "three_pa", "free_throw_m", "free_throw_a", "rebounds", "turnovers", "assists", "fouls")
         table = "opponent_stats" if side == "opponent" else "game_stats"
@@ -348,6 +413,9 @@ def stats():
     opponents = []
     totals = {metric: 0 for metric in ("points", "two_pm", "two_pa", "three_pm", "three_pa", "free_throw_m", "free_throw_a", "rebounds", "turnovers", "assists", "fouls")}
     if game:
+        participation = db.execute("""SELECT m.id, m.name, m.number, COALESCE(p.status, 'pending') status
+            FROM members m LEFT JOIN game_participation p ON p.member_id = m.id AND p.game_id = %s
+            ORDER BY CAST(REPLACE(m.number, '#', '') AS INTEGER)""", (game["id"],)).fetchall()
         members = db.execute(
             """SELECT m.*, COALESCE(s.two_pm, 0) two_pm, COALESCE(s.two_pa, 0) two_pa,
             COALESCE(s.three_pm, 0) three_pm, COALESCE(s.three_pa, 0) three_pa,
@@ -375,7 +443,8 @@ def stats():
     for player in opponents:
         for metric in opponent_totals:
             opponent_totals[metric] += player[metric]
-    return render_template("stats.html", games=games, game=game, members=members, opponents=opponents, totals=totals, opponent_totals=opponent_totals, side=request.args.get("side", "team"))
+    participation = participation if game else []
+    return render_template("stats.html", games=games, game=game, members=members, opponents=opponents, participation=participation, totals=totals, opponent_totals=opponent_totals, side=request.args.get("side", "team"))
 
 
 @app.route("/stats/<int:game_id>/opponents/new", methods=("POST",))
@@ -389,6 +458,28 @@ def add_opponent(game_id):
         db.commit()
         flash("相手選手を追加しました。", "success")
     return redirect(url_for("stats", game=game_id, side="opponent"))
+
+
+@app.route("/participation", methods=("GET", "POST"))
+def participation():
+    db = get_db()
+    games = db.execute("SELECT * FROM games ORDER BY game_date DESC, id DESC").fetchall()
+    game = next((item for item in games if str(item["id"]) == request.args.get("game")), games[0] if games else None)
+    if request.method == "POST" and game:
+        member_id = request.form.get("member_id", type=int)
+        status = request.form.get("status", "pending")
+        if member_id and status in ("yes", "no", "pending"):
+            db.execute("""INSERT INTO game_participation (game_id, member_id, status)
+                VALUES (%s, %s, %s)
+                ON CONFLICT(game_id, member_id)
+                DO UPDATE SET status = EXCLUDED.status""", (game["id"], member_id, status))
+            db.commit()
+            flash("参加アンケートを更新しました。", "success")
+        return redirect(url_for("participation", game=game["id"]))
+    responses = db.execute("""SELECT m.id, m.name, m.number, COALESCE(p.status, 'pending') status
+        FROM members m LEFT JOIN game_participation p ON p.member_id = m.id AND p.game_id = %s
+        ORDER BY CAST(REPLACE(m.number, '#', '') AS INTEGER)""", (game["id"],)).fetchall() if game else []
+    return render_template("participation.html", games=games, game=game, responses=responses)
 
 
 @app.route("/stats/games/new", methods=("GET", "POST"))

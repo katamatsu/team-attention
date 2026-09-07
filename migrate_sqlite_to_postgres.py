@@ -24,7 +24,6 @@ TABLES = (
     "opponent_players",
     "opponent_stats",
     "events",
-    "dashboard_memos",
     "game_participation",
 )
 

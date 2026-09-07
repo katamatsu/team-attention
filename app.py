@@ -301,7 +301,6 @@ def toggle_practice(practice_id):
 @app.route("/practices/new", methods=("GET", "POST"))
 def add_practice():
     if request.method == "POST":
-        schedule_type = request.form.get("schedule_type", "practice")
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "") or start_date
         start_time = request.form.get("start_time", "").strip()
@@ -311,18 +310,16 @@ def add_practice():
         try:
             datetime.strptime(start_date, "%Y-%m-%d")
             datetime.strptime(end_date, "%Y-%m-%d")
-            if end_date < start_date or not start_time or not end_time or not location:
+            if end_date < start_date or not start_time or not end_time or not title or not location:
                 raise ValueError
-            if schedule_type == "event" and not title:
-                raise ValueError
-            if schedule_type == "practice" and start_date != end_date:
+            if title == "練習" and start_date != end_date:
                 flash("練習は開始日と終了日を同じ日にしてください。", "error")
                 return render_template("add_practice.html")
         except ValueError:
             flash("日付、時間、内容、場所を正しく入力してください。", "error")
         else:
             db = get_db()
-            if schedule_type == "event":
+            if title != "練習":
                 db.execute("INSERT INTO events (start_date, end_date, start_time, end_time, title, location) VALUES (%s, %s, %s, %s, %s, %s)", (start_date, end_date, start_time, end_time, title, location))
                 db.commit()
                 flash("イベント予定を追加しました。", "success")
@@ -363,8 +360,8 @@ def add_member():
         name = request.form.get("name", "").strip()
         number = request.form.get("number", "").strip()
         position = request.form.get("position", "").strip().upper()
-        if not name or not number or not position:
-            flash("名前、背番号、ポジションを入力してください。", "error")
+        if not name or not number:
+            flash("名前と背番号を入力してください。", "error")
         else:
             db = get_db()
             db.execute("INSERT INTO members (name, number, position) VALUES (%s, %s, %s)", (name, number, position))

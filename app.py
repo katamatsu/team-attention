@@ -298,6 +298,25 @@ def toggle_practice(practice_id):
     return redirect(url_for("dashboard", selected=request.form.get("selected", ""), month=request.form.get("month", "")))
 
 
+@app.route("/practices/<int:practice_id>/delete", methods=("POST",))
+def delete_practice(practice_id):
+    db = get_db()
+    db.execute("DELETE FROM attendance WHERE practice_id = %s", (practice_id,))
+    db.execute("DELETE FROM practices WHERE id = %s", (practice_id,))
+    db.commit()
+    flash("練習予定を削除しました。", "success")
+    return redirect(url_for("dashboard", month=request.form.get("month", "")))
+
+
+@app.route("/events/<int:event_id>/delete", methods=("POST",))
+def delete_event(event_id):
+    db = get_db()
+    db.execute("DELETE FROM events WHERE id = %s", (event_id,))
+    db.commit()
+    flash("イベント予定を削除しました。", "success")
+    return redirect(url_for("dashboard", selected=request.form.get("selected", ""), month=request.form.get("month", "")))
+
+
 @app.route("/practices/new", methods=("GET", "POST"))
 def add_practice():
     if request.method == "POST":

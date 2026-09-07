@@ -515,6 +515,26 @@ def add_game():
     return render_template("add_game.html")
 
 
+@app.route("/stats/games/<int:game_id>/edit", methods=("GET", "POST"))
+def edit_game(game_id):
+    db = get_db()
+    game = db.execute("SELECT * FROM games WHERE id = %s", (game_id,)).fetchone()
+    if game is None:
+        return "試合が見つかりません", 404
+    if request.method == "POST":
+        game_date = request.form.get("game_date", "")
+        opponent = request.form.get("opponent", "").strip()
+        location = request.form.get("location", "").strip()
+        if not game_date or not opponent or not location:
+            flash("試合日、対戦相手、会場を入力してください。", "error")
+        else:
+            db.execute("UPDATE games SET game_date = %s, opponent = %s, location = %s WHERE id = %s", (game_date, opponent, location, game_id))
+            db.commit()
+            flash("試合情報を更新しました。", "success")
+            return redirect(url_for("stats", game=game_id))
+    return render_template("edit_game.html", game=game)
+
+
 if __name__ == "__main__":
     with app.app_context():
         init_db()

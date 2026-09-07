@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}試合情報を編集 | COURT LOG{% endblock %}
+{% block content %}
+<main class="edit-shell"><div class="edit-box"><p class="eyebrow orange">GAME CENTER</p><h1>試合情報を編集</h1><p class="subcopy">日付、対戦相手、会場を変更します。</p>{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<p class="flash {{ category }}">{{ message }}</p>{% endfor %}{% endif %}{% endwith %}<form method="post"><label>試合日<input name="game_date" type="date" value="{{ game['game_date'] }}" required autofocus></label><label>対戦相手<input name="opponent" type="text" value="{{ game['opponent'] }}" required></label><label>会場<input name="location" type="text" value="{{ game['location'] }}" required></label><div class="edit-actions"><a href="{{ url_for('stats', game=game['id']) }}">キャンセル</a><button class="primary-button" type="submit">保存 <span>→</span></button></div></form></div></main>
+{% endblock %}

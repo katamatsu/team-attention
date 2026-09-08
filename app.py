@@ -260,6 +260,7 @@ def dashboard():
     ensure_month_practices(month_date.year, month_date.month)
     practices = db.execute("SELECT * FROM practices WHERE practice_date LIKE %s ORDER BY practice_date", (f"{month_date:%Y-%m}%",)).fetchall()
     events = db.execute("SELECT * FROM events WHERE start_date <= %s AND end_date >= %s ORDER BY start_date, start_time", (f"{month_date:%Y-%m}-31", f"{month_date:%Y-%m}-01")).fetchall()
+    games = db.execute("SELECT * FROM games WHERE game_date LIKE %s ORDER BY game_date, id", (f"{month_date:%Y-%m}%",)).fetchall()
     selected = request.args.get("selected") or (today.isoformat() if any(item["practice_date"] == today.isoformat() for item in practices) else (practices[0]["practice_date"] if practices else ""))
     practice = next((item for item in practices if item["practice_date"] == selected), None)
     members = db.execute(
@@ -286,7 +287,11 @@ def dashboard():
     memo_row = db.execute("SELECT content FROM dashboard_memos WHERE id = 1").fetchone()
     memo = memo_row["content"] if memo_row else ""
     selected_events = events_by_date.get(selected, [])
-    return render_template("dashboard.html", practices=practices, practice=practice, selected=selected, members=members, present_count=present_count, calendar_days=calendar_days, practice_by_date=practice_by_date, events_by_date=events_by_date, selected_events=selected_events, memo=memo, month_date=month_date, previous_month=previous_month, next_month=next_month)
+    games_by_date = {}
+    for game in games:
+        games_by_date.setdefault(game["game_date"], []).append(game)
+    selected_games = games_by_date.get(selected, [])
+    return render_template("dashboard.html", practices=practices, practice=practice, selected=selected, members=members, present_count=present_count, calendar_days=calendar_days, practice_by_date=practice_by_date, events_by_date=events_by_date, selected_events=selected_events, games_by_date=games_by_date, selected_games=selected_games, memo=memo, month_date=month_date, previous_month=previous_month, next_month=next_month)
 
 
 @app.route("/practices/<int:practice_id>/toggle", methods=("POST",))
@@ -314,6 +319,19 @@ def delete_event(event_id):
     db.execute("DELETE FROM events WHERE id = %s", (event_id,))
     db.commit()
     flash("イベント予定を削除しました。", "success")
+    return redirect(url_for("dashboard", selected=request.form.get("selected", ""), month=request.form.get("month", "")))
+
+
+@app.route("/stats/games/<int:game_id>/delete", methods=("POST",))
+def delete_game(game_id):
+    db = get_db()
+    db.execute("DELETE FROM game_stats WHERE game_id = %s", (game_id,))
+    db.execute("DELETE FROM opponent_stats WHERE game_id = %s", (game_id,))
+    db.execute("DELETE FROM opponent_players WHERE game_id = %s", (game_id,))
+    db.execute("DELETE FROM game_participation WHERE game_id = %s", (game_id,))
+    db.execute("DELETE FROM games WHERE id = %s", (game_id,))
+    db.commit()
+    flash("試合予定を削除しました。", "success")
     return redirect(url_for("dashboard", selected=request.form.get("selected", ""), month=request.form.get("month", "")))
 
 

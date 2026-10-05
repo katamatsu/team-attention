@@ -30,15 +30,18 @@
   const attendanceChartElement = document.getElementById('attendanceChart');
   if (attendanceChartElement && attendanceHistory.length) {
     new Chart(attendanceChartElement, {
-      type: 'bar',
+      type: 'line',
       data: {
         labels: attendanceHistory.map((item) => item.label),
         datasets: [{
           label: '出席人数',
           data: attendanceHistory.map((item) => item.count),
           backgroundColor: '#ed6b3d',
-          borderRadius: 8,
-          borderSkipped: false
+          borderColor: '#ed6b3d',
+          borderWidth: 3,
+          tension: 0.25,
+          pointRadius: 4,
+          pointHoverRadius: 6
         }]
       },
       options: {

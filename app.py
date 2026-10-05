@@ -204,6 +204,11 @@ def practice_rule(day):
     return None
 
 
+def practice_label_for(date_value):
+    practice_day = datetime.strptime(date_value, "%Y-%m-%d").date() if isinstance(date_value, str) else date_value
+    return "自主練" if practice_day.weekday() in (5, 6) else "練習"
+
+
 def ensure_month_practices(year, month):
     db = get_db()
     last_day = calendar.monthrange(year, month)[1]
@@ -258,7 +263,9 @@ def dashboard():
     except ValueError:
         month_date = today.replace(day=1)
     ensure_month_practices(month_date.year, month_date.month)
-    practices = db.execute("SELECT * FROM practices WHERE practice_date LIKE %s ORDER BY practice_date", (f"{month_date:%Y-%m}%",)).fetchall()
+    practices = [dict(row) for row in db.execute("SELECT * FROM practices WHERE practice_date LIKE %s ORDER BY practice_date", (f"{month_date:%Y-%m}%",)).fetchall()]
+    for practice_row in practices:
+        practice_row["activity_type"] = practice_label_for(practice_row["practice_date"])
     events = db.execute("SELECT * FROM events WHERE start_date <= %s AND end_date >= %s ORDER BY start_date, start_time", (f"{month_date:%Y-%m}-31", f"{month_date:%Y-%m}-01")).fetchall()
     games = db.execute("SELECT * FROM games WHERE game_date LIKE %s ORDER BY game_date, id", (f"{month_date:%Y-%m}%",)).fetchall()
     selected = request.args.get("selected") or (today.isoformat() if any(item["practice_date"] == today.isoformat() for item in practices) else (practices[0]["practice_date"] if practices else ""))
@@ -272,6 +279,16 @@ def dashboard():
         (practice["id"],) if practice else (0,),
     ).fetchall()
     present_count = sum(member["status"] == "present" for member in members) if practice else 0
+    attendance_history = []
+    for practice_row in practices:
+        if practice_row["is_cancelled"]:
+            continue
+        count = db.execute("SELECT COUNT(*) AS count FROM attendance WHERE practice_id = %s AND status = 'present'", (practice_row["id"],)).fetchone()["count"]
+        attendance_history.append({
+            "date": practice_row["practice_date"],
+            "label": datetime.strptime(practice_row["practice_date"], "%Y-%m-%d").strftime("%m/%d"),
+            "count": count,
+        })
     previous_month = (month_date - timedelta(days=1)).replace(day=1)
     next_month = (month_date + timedelta(days=32)).replace(day=1)
     calendar_days = calendar.Calendar(firstweekday=6).monthdatescalendar(month_date.year, month_date.month)
@@ -291,7 +308,7 @@ def dashboard():
     for game in games:
         games_by_date.setdefault(game["game_date"], []).append(game)
     selected_games = games_by_date.get(selected, [])
-    return render_template("dashboard.html", practices=practices, practice=practice, selected=selected, members=members, present_count=present_count, calendar_days=calendar_days, practice_by_date=practice_by_date, events_by_date=events_by_date, selected_events=selected_events, games_by_date=games_by_date, selected_games=selected_games, memo=memo, month_date=month_date, previous_month=previous_month, next_month=next_month)
+    return render_template("dashboard.html", practices=practices, practice=practice, selected=selected, members=members, present_count=present_count, attendance_history=attendance_history, calendar_days=calendar_days, practice_by_date=practice_by_date, events_by_date=events_by_date, selected_events=selected_events, games_by_date=games_by_date, selected_games=selected_games, memo=memo, month_date=month_date, previous_month=previous_month, next_month=next_month)
 
 
 @app.route("/practices/<int:practice_id>/toggle", methods=("POST",))

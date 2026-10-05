@@ -16,6 +16,7 @@ def test_dashboard_has_attendance_chart_and_weekend_self_training_label():
     assert "出席人数" in html
     assert "部活動の活動日" in html
     assert "type: 'line'" in html
+    assert "max: 22" in html
     assert "自主練" in html
     history_json = html.split("const attendanceHistory = ", 1)[1].split(";", 1)[0]
     attendance_history = json.loads(history_json)

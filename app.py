@@ -281,12 +281,13 @@ def dashboard():
     present_count = sum(member["status"] == "present" for member in members) if practice else 0
     attendance_history = []
     for practice_row in practices:
-        if practice_row["is_cancelled"]:
+        practice_date = datetime.strptime(practice_row["practice_date"], "%Y-%m-%d").date()
+        if practice_row["is_cancelled"] or practice_date.weekday() not in (1, 3):
             continue
         count = db.execute("SELECT COUNT(*) AS count FROM attendance WHERE practice_id = %s AND status = 'present'", (practice_row["id"],)).fetchone()["count"]
         attendance_history.append({
             "date": practice_row["practice_date"],
-            "label": datetime.strptime(practice_row["practice_date"], "%Y-%m-%d").strftime("%m/%d"),
+            "label": practice_date.strftime("%m/%d"),
             "count": count,
         })
     previous_month = (month_date - timedelta(days=1)).replace(day=1)

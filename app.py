@@ -460,6 +460,19 @@ def stats():
         return redirect(url_for("stats", game=game_id))
 
     games = db.execute("SELECT * FROM games ORDER BY game_date DESC, id DESC").fetchall()
+    game_scores = {item["id"]: {"team": 0, "opponent": 0} for item in games}
+    team_scores = db.execute("""SELECT game_id,
+        SUM(two_pm * 2 + three_pm * 3 + free_throw_m) AS points
+        FROM game_stats GROUP BY game_id""").fetchall()
+    opponent_scores = db.execute("""SELECT game_id,
+        SUM(two_pm * 2 + three_pm * 3 + free_throw_m) AS points
+        FROM opponent_stats GROUP BY game_id""").fetchall()
+    for score in team_scores:
+        if score["game_id"] in game_scores:
+            game_scores[score["game_id"]]["team"] = score["points"] or 0
+    for score in opponent_scores:
+        if score["game_id"] in game_scores:
+            game_scores[score["game_id"]]["opponent"] = score["points"] or 0
     game = next((item for item in games if str(item["id"]) == request.args.get("game")), games[0] if games else None)
     members = []
     opponents = []
@@ -496,7 +509,7 @@ def stats():
         for metric in opponent_totals:
             opponent_totals[metric] += player[metric]
     participation = participation if game else []
-    return render_template("stats.html", games=games, game=game, members=members, opponents=opponents, participation=participation, totals=totals, opponent_totals=opponent_totals, side=request.args.get("side", "team"))
+    return render_template("stats.html", games=games, game=game, game_scores=game_scores, members=members, opponents=opponents, participation=participation, totals=totals, opponent_totals=opponent_totals, side=request.args.get("side", "team"))
 
 
 @app.route("/stats/<int:game_id>/opponents/new", methods=("POST",))
